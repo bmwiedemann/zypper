@@ -267,6 +267,12 @@ INSTALL(
   RUNTIME DESTINATION ${INSTALL_PREFIX}/bin
 )
 
+INSTALL( FILES
+  ${CMAKE_SOURCE_DIR}/systemd/zypperd.service
+  ${CMAKE_SOURCE_DIR}/systemd/zypperd.socket
+  DESTINATION ${CMAKE_INSTALL_PREFIX}/lib/systemd/system
+)
+
 # zypp-refresh utility
 ADD_EXECUTABLE( zypp-refresh zypp-refresh.cc )
 TARGET_LINK_LIBRARIES( zypp-refresh ${ZYPP_LIBRARY} )

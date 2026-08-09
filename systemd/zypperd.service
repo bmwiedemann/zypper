@@ -1,0 +1,16 @@
+[Unit]
+Description=Persistent zypper query daemon
+Documentation=man:zypper(8)
+Requires=zypperd.socket
+After=zypperd.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/zypperd
+Restart=always
+RestartSec=2
+RuntimeDirectory=zypperd
+OOMScoreAdjust=500
+
+[Install]
+WantedBy=multi-user.target
