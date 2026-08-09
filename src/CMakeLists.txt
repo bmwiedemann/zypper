@@ -258,6 +258,15 @@ INSTALL(
   RUNTIME DESTINATION ${INSTALL_PREFIX}/sbin
 )
 
+# zypperc thin client for zypperd
+ADD_EXECUTABLE( zypperc zypperc.c )
+SET_TARGET_PROPERTIES( zypperc PROPERTIES LINK_FLAGS "-pie -Wl,-z,relro,-z,now")
+SET_TARGET_PROPERTIES( zypperc PROPERTIES COMPILE_FLAGS "-fpie -fPIE")
+INSTALL(
+  TARGETS zypperc
+  RUNTIME DESTINATION ${INSTALL_PREFIX}/bin
+)
+
 # zypp-refresh utility
 ADD_EXECUTABLE( zypp-refresh zypp-refresh.cc )
 TARGET_LINK_LIBRARIES( zypp-refresh ${ZYPP_LIBRARY} )
