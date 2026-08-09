@@ -250,6 +250,14 @@ INSTALL(  FILES
   DESTINATION ${CMAKE_INSTALL_PREFIX}/share/zypper/xml
 )
 
+# zypperd persistent daemon
+ADD_EXECUTABLE( zypperd zypperd.cc )
+TARGET_LINK_LIBRARIES( zypperd zypper_lib ${ZYPP_LIBRARY} ${ZYPP_TUI_LIBRARY} ${READLINE_LIBRARY} -laugeas ${AUGEAS_LIBRARY} -lrt )
+INSTALL(
+  TARGETS zypperd
+  RUNTIME DESTINATION ${INSTALL_PREFIX}/sbin
+)
+
 # zypp-refresh utility
 ADD_EXECUTABLE( zypp-refresh zypp-refresh.cc )
 TARGET_LINK_LIBRARIES( zypp-refresh ${ZYPP_LIBRARY} )

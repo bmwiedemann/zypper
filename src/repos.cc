@@ -1744,7 +1744,17 @@ void load_resolvables( Zypper & zypper )
   // don't call this function more than once for a single ZYpp instance
   // (e.g. in shell)
   if ( done )
+  {
+    // The pool is already resident (zypper shell, zypperd). Emit the
+    // user-visible progress messages anyway so the output matches a
+    // fresh zypper invocation.
+    zypper.out().info(_("Loading repository data...") );
+    if ( zypper.runtimeData().repos.empty() )
+      zypper.out().warning(_("No repositories defined. Operating only with the installed resolvables. Nothing can be installed.") );
+    if ( !zypper.config().disable_system_resolvables )
+      zypper.out().info( _("Reading installed packages...") );
     return;
+  }
 
   MIL << "Going to load resolvables" << endl;
 
