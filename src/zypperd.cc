@@ -15,9 +15,11 @@
  * global lock (readonly hack), so regular zypper keeps working alongside.
  *
  * Read-only allowlisted commands run in-process on the preloaded pool.
- * Mutating commands from a root peer are handled by exec'ing the real
- * /usr/bin/zypper inside the child (real lock, real behavior); anything
- * else is declined and the client falls back to /usr/bin/zypper itself.
+ * Everything else is declined and the client execs /usr/bin/zypper
+ * itself: mutating commands then run in the client's own session with
+ * its controlling terminal, so interactive prompts (which zypper reads
+ * from /dev/tty, bnc#436963), Ctrl-Z job control and window resizing
+ * behave exactly as without the daemon.
  *
  * See zypperd-protocol.h for the wire protocol (binary via zypperc with
  * fd passing, or plain text via e.g. `nc -U`).
@@ -69,7 +71,6 @@
 #include "zypperd-protocol.h"
 
 #define ZYPPERD_LOG "/var/log/zypperd.log"
-#define REAL_ZYPPER "/usr/bin/zypper"
 
 using namespace zypp;
 
@@ -323,7 +324,7 @@ static Staleness checkStale()
 // Command classification
 ///////////////////////////////////////////////////////////////////
 
-enum class Disposition { InProcess, ExecReal, Fallback };
+enum class Disposition { InProcess, Fallback };
 
 // Commands that only read the pool / configuration.
 static bool readOnlyCommand( ZypperCommand::Command c )
@@ -429,12 +430,11 @@ static Disposition classify( const Conn &conn )
     return Disposition::InProcess;
   }
 
-  // Mutating command: only a peer with the daemon's own privileges (root
-  // in production) may have the daemon run it, and only in binary mode
-  // where the real tty travels along for prompts.
-  if ( conn.binary && ( conn.peer.uid == 0 || conn.peer.uid == ::geteuid() ) )
-    return Disposition::ExecReal;
-
+  // Mutating command: decline, the client execs /usr/bin/zypper itself.
+  // Running it daemon-side would detach it from the client's session:
+  // zypper reads interactive prompts from /dev/tty (bnc#436963), which
+  // does not exist in the daemon's session, and job control would act
+  // on the client while the transaction keeps running in the daemon.
   return Disposition::Fallback;
 }
 
@@ -442,7 +442,7 @@ static Disposition classify( const Conn &conn )
 // Worker children
 ///////////////////////////////////////////////////////////////////
 
-[[noreturn]] static void runWorkerChild( Conn &conn, Disposition disp )
+[[noreturn]] static void runWorkerChild( Conn &conn )
 {
   ::setpgid( 0, 0 );
 
@@ -494,17 +494,6 @@ static Disposition classify( const Conn &conn )
   for ( size_t i = 1; i < conn.argv.size(); ++i )
     argv.push_back( const_cast<char *>( conn.argv[i].c_str() ) );
   argv.push_back( nullptr );
-
-  if ( disp == Disposition::ExecReal )
-  {
-    // real zypper takes the real lock and does everything itself
-    ::unsetenv( "ZYPP_READONLY_HACK" );
-    ::setenv( "PATH", "/usr/sbin:/usr/bin:/sbin:/bin", 1 );
-    ::execv( REAL_ZYPPER, argv.data() );
-    const char msg[] = "zypperd: cannot exec " REAL_ZYPPER "\n";
-    (void)!write( STDERR_FILENO, msg, sizeof( msg ) - 1 );
-    ::_exit( 127 );
-  }
 
   // Some zypper paths (e.g. Zypper::immediateExit after SIGPIPE) call
   // exit(). In a forked child that must not run the process's static
@@ -710,7 +699,7 @@ static void dispatchRequest( std::map<int, Conn>::iterator it )
   if ( pid < 0 )
   { declineConn( it, ZYPPERD_REPLY_ERROR, ZYPPERD_ERR_PROTO ); return; }
   if ( pid == 0 )
-    runWorkerChild( c, disp ); // never returns
+    runWorkerChild( c ); // never returns
 
   ::setpgid( pid, pid ); // also from the parent side: no race with kill(-pgid)
   c.child = pid;
@@ -719,9 +708,6 @@ static void dispatchRequest( std::map<int, Conn>::iterator it )
   c.closeClientFds(); // the child has them now
   c.buf.clear();
   g_childConn[pid] = c.fd;
-  // No special handling after ExecReal finishes: whatever it changed
-  // (rpmdb, repos.d, solv caches) is caught by the freshness gate the
-  // next time an in-process request arrives.
 }
 
 static void handleConnReadable( std::map<int, Conn>::iterator it )
